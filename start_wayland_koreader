@@ -1,0 +1,2 @@
+sudo docker start koreader_container
+sudo docker attach koreader_container 

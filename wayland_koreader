@@ -1,0 +1,12 @@
+sudo docker run -it \
+    --name koreader_container \
+    -e XDG_RUNTIME_DIR=/run/user/$UID \
+    -v /run/user/$UID:/run/user/$UID \
+    -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
+    -v $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY \
+    -v $(pwd)/koreader:/home/ko/koreader \
+    -e SDL_VIDEODRIVER=wayland \
+    --user root \
+    koreader/koappimage:latest \
+    bash -c "cd /home/ko/koreader && ./kodev run"
+
