@@ -41,6 +41,33 @@ function dump(var, depth)
         return tostring(var)
     end
 end
+function mysplit(inputstr, sep)
+    if sep == nil then
+        sep = "%s"
+    end
+    local t = {}
+    for str in string.gmatch(inputstr, "([^" .. sep .. "]+)") do
+        table.insert(t, str)
+    end
+    return t
+end
+
+function speedko:mapWholePage(debug)
+    debug = debug or false
+    local page_map = {}
+    local pos0 = { x = 0, y = 0 }
+    local pos1 = { x = Screen:getWidth(), y = Screen:getHeight() }
+
+    local page_text = self.ui.view.document:getScreenBoxesFromPositions(pos0, pos1, not debug)
+    if debug then
+        logger.dbg("Lortey Text On Page " .. dump(page_text))
+    end
+
+    local lines = mysplit(page_text.text, "\n")
+    if debug then
+        logger.dbg("Lortey Text Lines " .. dump(lines))
+    end
+end
 function speedko:addToMainMenu(menu_items)
     local rect = {
         x = 137,
@@ -77,15 +104,37 @@ function speedko:addToMainMenu(menu_items)
             self.ui.view:drawSavedHighlight(Screen.bb, 0, 0)
             local word0 = self.ui.document:getWordFromPosition(pos0, true).pos0
             local word1 = self.ui.document:getWordFromPosition(pos1, true).pos1
-
             logger.dbg(
-                "Lortey\n\n\n\n\n\n" .. dump(self.ui.document._document:getWordBoxesFromPositions(word0, word1, false))
+                "Lortey SBoxes "
+                    .. word0
+                    .. dump(self:getXPosAndPosition(self.ui.document:getNextVisibleWordStart(word0), true))
             )
+
+            --self.mapWholePage(self, true)
+
             UIManager:show(InfoMessage:new({
                 text = _("Speed reading settings menu"), -- Fixed: Added proper text
             }))
         end,
     }
+end
+
+function speedko:getXPosAndPosition(lastPosX, debug)
+    debug = debug or false
+
+    -- Initialize the return table
+    local NextWord = {
+        xPos = {},
+        box = nil,
+    }
+
+    -- Get positions with error checking
+    NextWord.xPos.pos0 = self.ui.view.document:getNextVisibleWordStart(lastPosX)
+    NextWord.xPos.pos1 = self.ui.view.document:getNextVisibleWordEnd(lastPosX)
+
+    NextWord.box = self.ui.view.document:getScreenBoxesFromPositions(NextWord.xPos.pos0, NextWord.xPos.pos1, not debug)
+
+    return NextWord
 end
 
 return speedko
