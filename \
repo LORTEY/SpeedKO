@@ -58,26 +58,15 @@ function speedko:mapWholePage(debug)
     local pos0 = { x = 0, y = 0 }
     local pos1 = { x = Screen:getWidth(), y = Screen:getHeight() }
 
-    local first_x_pointer = self.ui.view.document:getWordFromPosition(pos0).pos0
-
-    local text = {}
-    while self.ui.document:isXPointerInCurrentPage(first_x_pointer) do
-        local current = self:getXPosAndPosition(first_x_pointer, false)
-        first_x_pointer = current.xPos.pos1
-        table.insert(text, current)
-    end
-
-    local result = {}
+    local page_text = self.ui.view.document:getScreenBoxesFromPositions(pos0, pos1, not debug)
     if debug then
-        for _, subtable in ipairs(text) do
-            if subtable.text then -- Check if "a" exists
-                table.insert(result, dump(subtable.box)) -- Add to result list
-            end
-        end
-        logger.dbg("Lortey Text On Page " .. table.concat(result, "|"))
+        logger.dbg("Lortey Text On Page " .. dump(page_text))
     end
 
-    return text
+    local lines = mysplit(page_text.text, "\n")
+    if debug then
+        logger.dbg("Lortey Text Lines " .. dump(lines))
+    end
 end
 function speedko:addToMainMenu(menu_items)
     local rect = {
@@ -115,7 +104,11 @@ function speedko:addToMainMenu(menu_items)
             self.ui.view:drawSavedHighlight(Screen.bb, 0, 0)
             local word0 = self.ui.document:getWordFromPosition(pos0, true).pos0
             local word1 = self.ui.document:getWordFromPosition(pos1, true).pos1
-            logger.dbg("Lortey SBoxes " .. word0 .. dump(self:mapWholePage(true)))
+            logger.dbg(
+                "Lortey SBoxes "
+                    .. word0
+                    .. dump(self:getXPosAndPosition(self.ui.document:getNextVisibleWordStart(word0), true))
+            )
 
             --self.mapWholePage(self, true)
 
@@ -133,11 +126,10 @@ function speedko:getXPosAndPosition(lastPosX, debug)
     local NextWord = {
         xPos = {},
         box = {},
-        --position = {
-        --  pos_start = nil,
-        --pos_end = nil,
-        --},
-        text = {},
+        position = {
+            pos_start = nil,
+            pos_end = nil,
+        },
     }
 
     -- Get positions with error checking
@@ -159,26 +151,19 @@ function speedko:getXPosAndPosition(lastPosX, debug)
         )
     end
 
-    --NextWord.position.pos_start = self.ui.view.document:getPosFromXPointer(NextWord.xPos.pos0)
-    --NextWord.position.pos_end = self.ui.view.document:getPosFromXPointer(NextWord.xPos.pos1)
+    NextWord.position.pos_start = self.ui.view.document:getScreenPositionFromXPointer(NextWord.xPos.pos0)
+    NextWord.position.pos_end = self.ui.view.document:getScreenPositionFromXPointer(NextWord.xPos.pos1)
 
-    --if debug then
-    --  logger.dbg(
-    --    "Lortey Word Position " .. dump(NextWord.position.pos_start) .. " " .. dump(NextWord.position.pos_end)
-    --)
-    --end
+    if debug then
+        logger.dbg(
+            "Lortey Word Position " .. dump(NextWord.position.pos_start) .. " " .. dump(NextWord.position.pos_end)
+        )
+    end
 
-    NextWord.box = self.ui.view.document:getScreenBoxesFromPositions(NextWord.xPos.pos0, NextWord.xPos.pos1, not debug)
+    NextWord.box = self.ui.view.document:getTextFromXPointers(NextWord.xPos.pos0, NextWord.xPos.pos1, debug)
     if debug then
         logger.dbg("Lortey Word Boxes " .. dump(NextWord.box))
     end
-
-    NextWord.text = self.ui.view.document:getTextFromXPointers(NextWord.xPos.pos0, NextWord.xPos.pos1, debug)
-
-    if debug then
-        logger.dbg("Lortey Text Xpointers " .. NextWord.text)
-    end
-
     return NextWord
 end
 
