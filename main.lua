@@ -5,6 +5,7 @@ local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 local logger = require("logger")
+local IconWidget = require("ui/widget/iconwidget")
 local speedko = WidgetContainer:extend({
     name = "speedko",
     is_doc_only = false,
@@ -51,7 +52,11 @@ function mysplit(inputstr, sep)
     end
     return t
 end
-
+function wait(seconds)
+    local start = os.time()
+    while os.time() - start < seconds do
+    end
+end
 function speedko:mapWholePage(debug)
     debug = debug or false
     local page_map = {}
@@ -62,11 +67,16 @@ function speedko:mapWholePage(debug)
 
     local text = {}
     while self.ui.document:isXPointerInCurrentPage(first_x_pointer) do
-        local current = self:getXPosAndPosition(first_x_pointer, false)
-        first_x_pointer = current.xPos.pos1
-        table.insert(text, current)
-    end
+        local success, _ = pcall(function()
+            local current = self:getXPosAndPosition(first_x_pointer, debug)
 
+            first_x_pointer = current.xPos.pos1
+            table.insert(text, current)
+        end)
+        if not success then
+            break
+        end
+    end
     local result = {}
     if debug then
         for _, subtable in ipairs(text) do
@@ -79,53 +89,59 @@ function speedko:mapWholePage(debug)
 
     return text
 end
-function speedko:addToMainMenu(menu_items)
-    local rect = {
-        x = 137,
-        h = 27,
-        w = 170,
-        y = 166,
-    }
-    local highlight_data = {
 
-        [1] = {
-            {
-                colorful = true,
-                drawer = "lighten",
-                color = Blitbuffer.ColorRGB32(255, 255, 51, 255),
-                index = 2,
-                rect = {
-                    y = 287,
-                    w = 180,
-                    h = 27,
-                    x = 154,
-                },
-            },
-        },
-    }
-    local pos0 = { x = 0, y = 0 }
-    local pos1 = { x = Screen:getWidth(), y = Screen:getHeight() }
+-- Invoke Like this
+--UIManager:nextTick(function()
+--  if #value.box == 1 then
+--      self:drawHighlight(value.box[1], "lighten", Blitbuffer.ColorRGB32(255, 0, 255, 0xFF * 0.5))
+--  end
+--end)
+
+function speedko:drawHighlight(rect, type, color)
+    if rect.x and rect.y and rect.w and rect.h then
+        self.ui.view:drawHighlightRect(Screen.bb, 0, 0, rect, type, color)
+    end
+    UIManager:setDirty("ui", "full", rect, true)
+end
+
+function speedko:addToMainMenu(menu_items)
     menu_items.speedko_menu = {
         text = _("Speed Reading Settings"),
         sorting_hint = "setting",
 
         callback = function()
-            -- self.ui.view.drawHighlightRect(self.ui.view, Screen.bb, 0, 0, rect, "lighten")
-            self.ui.view.visible_boxes = highlight_data
-            self.ui.view:drawSavedHighlight(Screen.bb, 0, 0)
-            local word0 = self.ui.document:getWordFromPosition(pos0, true).pos0
-            local word1 = self.ui.document:getWordFromPosition(pos1, true).pos1
-            logger.dbg("Lortey SBoxes " .. word0 .. dump(self:mapWholePage(true)))
-
-            --self.mapWholePage(self, true)
-
+            local words = self:mapWholePage(false)
             UIManager:show(InfoMessage:new({
                 text = _("Speed reading settings menu"), -- Fixed: Added proper text
             }))
+            local icon_size = Screen:scaleBySize(32)
+
+            local icon = IconWidget:new({
+                icon = "book.opened",
+                width = icon_size,
+                height = icon_size,
+            })
+
+            --UIManager:nextTick(function()
+            --    self.ui.view.flipping[1][1] = icon
+            --    WidgetContainer:paintTo(self.ui.view.flipping[1][1].dimen, Screen.bb, 0, 0)
+            --    logger.dbg("Lorety rectttt " .. dump(self.ui.view.flipping[1][1]))
+            --    UIManager:setDirty("reader", "partial", {
+            --        self.ui.view.flipping.dimen,
+            --    }, false)
+            --end)
+            UIManager:scheduleIn(0, function()
+                UIManager:nextTick(function()
+                    for _, value in pairs(words) do
+                        if #value.box == 1 then
+                            self:drawHighlight(value.box[1], "lighten", Blitbuffer.Gray)
+                        end
+                    end
+                end)
+            end)
         end,
     }
 end
-
 function speedko:getXPosAndPosition(lastPosX, debug)
     debug = debug or false
 
@@ -158,15 +174,6 @@ function speedko:getXPosAndPosition(lastPosX, debug)
                 .. self.ui.view.document:compareXPointers(NextWord.xPos.pos0, NextWord.xPos.pos1)
         )
     end
-
-    --NextWord.position.pos_start = self.ui.view.document:getPosFromXPointer(NextWord.xPos.pos0)
-    --NextWord.position.pos_end = self.ui.view.document:getPosFromXPointer(NextWord.xPos.pos1)
-
-    --if debug then
-    --  logger.dbg(
-    --    "Lortey Word Position " .. dump(NextWord.position.pos_start) .. " " .. dump(NextWord.position.pos_end)
-    --)
-    --end
 
     NextWord.box = self.ui.view.document:getScreenBoxesFromPositions(NextWord.xPos.pos0, NextWord.xPos.pos1, not debug)
     if debug then
