@@ -2,10 +2,13 @@ local Dispatcher = require("dispatcher") -- luacheck:ignore
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
-local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 local logger = require("logger")
+local Geom = require("ui/geometry")
+
 local IconWidget = require("ui/widget/iconwidget")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local speedko = WidgetContainer:extend({
     name = "speedko",
     is_doc_only = false,
@@ -13,6 +16,7 @@ local speedko = WidgetContainer:extend({
 local Blitbuffer = require("ffi/blitbuffer")
 local Device = require("device")
 local Screen = Device.screen
+local speedko_indicator = require("indicator")
 function speedko:onDispatcherRegisterActions()
     Dispatcher:registerAction("speedko_action", {
         category = "none",
@@ -42,7 +46,7 @@ function dump(var, depth)
         return tostring(var)
     end
 end
-function mysplit(inputstr, sep)
+function split(inputstr, sep)
     if sep == nil then
         sep = "%s"
     end
@@ -52,28 +56,20 @@ function mysplit(inputstr, sep)
     end
     return t
 end
-function wait(seconds)
-    local start = os.time()
-    while os.time() - start < seconds do
-    end
-end
+
 function speedko:mapWholePage(debug)
     debug = debug or false
-    local page_map = {}
     local pos0 = { x = 0, y = 0 }
-    local pos1 = { x = Screen:getWidth(), y = Screen:getHeight() }
 
-    local first_x_pointer = self.ui.view.document:getWordFromPosition(pos0).pos0
+    local x_pointer = self.ui.view.document:getWordFromPosition(pos0).pos0
 
     local text = {}
-    while self.ui.document:isXPointerInCurrentPage(first_x_pointer) do
-        local success, _ = pcall(function()
-            local current = self:getXPosAndPosition(first_x_pointer, debug)
+    while true do
+        local current = self:getXPosAndPosition(x_pointer, debug)
+        table.insert(text, current)
 
-            first_x_pointer = current.xPos.pos1
-            table.insert(text, current)
-        end)
-        if not success then
+        x_pointer = self.ui.view.document:getNextVisibleWordStart(current.xPos.pos1)
+        if x_pointer == nil or not self.ui.document:isXPointerInCurrentPage(x_pointer) then
             break
         end
     end
@@ -97,11 +93,18 @@ end
 --  end
 --end)
 
-function speedko:drawHighlight(rect, type, color)
-    if rect.x and rect.y and rect.w and rect.h then
-        self.ui.view:drawHighlightRect(Screen.bb, 0, 0, rect, type, color)
+function speedko:drawHighlight(rects, type, color)
+    if rects.x and rects.y and rects.w and rects.h then --if rectangles contain only one rectangle
+        self.ui.view:drawHighlightRect(Screen.bb, 0, 0, rects, type, color)
+        UIManager:setDirty(nil, "ui", rects, nil)
+    else
+        for _, rect in pairs(rects) do -- if multiple rectangles are present for example one word is split between lines because the line ends
+            if rect.x and rect.y and rect.w and rect.h then
+                self.ui.view:drawHighlightRect(Screen.bb, 0, 0, rect, type, color)
+            end
+            UIManager:setDirty(nil, "ui", rect, nil)
+        end
     end
-    UIManager:setDirty("ui", "full", rect, true)
 end
 
 function speedko:addToMainMenu(menu_items)
@@ -121,27 +124,24 @@ function speedko:addToMainMenu(menu_items)
                 width = icon_size,
                 height = icon_size,
             })
-
-            --UIManager:nextTick(function()
-            --    self.ui.view.flipping[1][1] = icon
-            --    WidgetContainer:paintTo(self.ui.view.flipping[1][1].dimen, Screen.bb, 0, 0)
-            --    logger.dbg("Lorety rectttt " .. dump(self.ui.view.flipping[1][1]))
-            --    UIManager:setDirty("reader", "partial", {
-            --        self.ui.view.flipping.dimen,
-            --    }, false)
-            --end)
-            UIManager:scheduleIn(0, function()
-                UIManager:nextTick(function()
-                    for _, value in pairs(words) do
-                        if #value.box == 1 then
-                            self:drawHighlight(value.box[1], "lighten", Blitbuffer.Gray)
-                        end
+            logger.dbg("Lortey indicator " .. tostring(speedko_indicator))
+            -- UIManager:show(WidgetContainer:new({
+            --     dimen = Geom:new({ w = 32, h = 32 }),
+            --     icon,
+            -- }))
+            speedko_indicator:paintTo(Screen.bb, 0, 0)
+            UIManager:nextTick(function()
+                for _, value in pairs(words) do
+                    if #value.box > 0 then
+                        self:drawHighlight(value.box, "invert")
                     end
-                end)
+                end
             end)
         end,
     }
 end
+
+--Gets X Pointer and rectangle(s) of words from provided X Pointer use debug flag to log verbose responses
 function speedko:getXPosAndPosition(lastPosX, debug)
     debug = debug or false
 
@@ -149,15 +149,11 @@ function speedko:getXPosAndPosition(lastPosX, debug)
     local NextWord = {
         xPos = {},
         box = {},
-        --position = {
-        --  pos_start = nil,
-        --pos_end = nil,
-        --},
         text = {},
     }
 
-    -- Get positions with error checking
-    NextWord.xPos.pos0 = self.ui.view.document:getNextVisibleWordStart(lastPosX)
+    -- Get X Pointers error checking
+    NextWord.xPos.pos0 = lastPosX
     NextWord.xPos.pos1 = self.ui.view.document:getNextVisibleWordEnd(NextWord.xPos.pos0)
 
     if debug then
