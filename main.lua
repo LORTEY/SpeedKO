@@ -5,18 +5,17 @@ local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 local logger = require("logger")
 local Geom = require("ui/geometry")
+local LeftContainer = require("ui/widget/container/inputcontainer")
 
-local IconWidget = require("ui/widget/iconwidget")
-local VerticalGroup = require("ui/widget/verticalgroup")
+local ImageWidget = require("ui/widget/imagewidget")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local speedko = WidgetContainer:extend({
     name = "speedko",
     is_doc_only = false,
+    indicator_enabled = true,
 })
-local Blitbuffer = require("ffi/blitbuffer")
 local Device = require("device")
 local Screen = Device.screen
-local speedko_indicator = require("indicator")
 function speedko:onDispatcherRegisterActions()
     Dispatcher:registerAction("speedko_action", {
         category = "none",
@@ -29,6 +28,7 @@ end
 function speedko:init()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
+    self.view:registerViewModule("speedko_indicator", self)
 end
 function dump(var, depth)
     depth = depth or 0
@@ -106,7 +106,10 @@ function speedko:drawHighlight(rects, type, color)
         end
     end
 end
-
+local function getScriptDirectory()
+    local str = debug.getinfo(2, "S").source:sub(2)
+    return str:match("(.*[/\\])") or "./"
+end
 function speedko:addToMainMenu(menu_items)
     menu_items.speedko_menu = {
         text = _("Speed Reading Settings"),
@@ -117,26 +120,23 @@ function speedko:addToMainMenu(menu_items)
             UIManager:show(InfoMessage:new({
                 text = _("Speed reading settings menu"), -- Fixed: Added proper text
             }))
-            local icon_size = Screen:scaleBySize(32)
 
-            local icon = IconWidget:new({
-                icon = "book.opened",
-                width = icon_size,
-                height = icon_size,
-            })
-            logger.dbg("Lortey indicator " .. tostring(speedko_indicator))
+            logger.dbg("Lortey indicator " .. dump(UIManager:getTopmostVisibleWidget()))
             -- UIManager:show(WidgetContainer:new({
             --     dimen = Geom:new({ w = 32, h = 32 }),
             --     icon,
             -- }))
-            speedko_indicator:paintTo(Screen.bb, 0, 0)
-            UIManager:nextTick(function()
-                for _, value in pairs(words) do
-                    if #value.box > 0 then
-                        self:drawHighlight(value.box, "invert")
-                    end
-                end
-            end)
+            self:set_indicator(getScriptDirectory() .. "icons/hourglass.svg", true)
+            self:createUI()
+            --UIManager:show(self)
+
+            --UIManager:nextTick(function()
+            --    for _, value in pairs(words) do
+            --        if #value.box > 0 then
+            --            self:drawHighlight(value.box, "invert")
+            --        end
+            --    end
+            --end)
         end,
     }
 end
@@ -185,4 +185,36 @@ function speedko:getXPosAndPosition(lastPosX, debug)
     return NextWord
 end
 
+function speedko:paintTo(bb, x, y)
+    if self.indicator_enabled and self[1] then
+        self[1]:paintTo(bb, x, y)
+    end
+end
+
+function speedko:set_indicator(icon_name, transparent)
+    transparent = transparent or false
+    local icon_size = Screen:scaleBySize(32)
+
+    self.icon = ImageWidget:new({
+        file = icon_name,
+        width = icon_size,
+        height = icon_size,
+        alpha = transparent,
+    })
+end
+function speedko:createUI()
+    local icon_size = Screen:scaleBySize(32)
+    if self.icon then
+        self[1] = LeftContainer:new({
+            dimen = Geom:new({
+                x = 0,
+                y = 0,
+                w = icon_size,
+                h = icon_size,
+            }),
+
+            self.icon,
+        })
+    end
+end
 return speedko
