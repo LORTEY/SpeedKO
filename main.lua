@@ -5,11 +5,18 @@ local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 local logger = require("logger")
 local Geom = require("ui/geometry")
+local MultiInputDialog = require("ui/widget/multiinputdialog")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
 local LeftContainer = require("ui/widget/container/inputcontainer")
-
+local Blitbuffer = require("ffi/blitbuffer")
 local ImageWidget = require("ui/widget/imagewidget")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local time = require("ui/time")
+
+local T = require("ffi/util").template
+local LuaSettings = require("luasettings")
+local DataStorage = require("datastorage")
+
 local speedko = WidgetContainer:extend({
     name = "speedko",
     is_doc_only = false,
@@ -27,20 +34,87 @@ function speedko:onDispatcherRegisterActions()
 end
 
 function speedko:init()
+    if not self.settings then
+        self:readSettingsFile()
+    end
     self.pointer_enabled = false
     self.current_page = nil
     self.pointer_word_sec = 60.0 / 500
     self.pointer_mapped_page = nil
     self.pointer_type = "underscore"
     self.pointer_index = nil
+    self.pointer_render_mode = "lazy" -- "lazy" "smart" "heavy"
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
-    self.view:registerViewModule("speedko_indicator", self)
 end
-function speedko:onReaderReady()
-    logger.dbg("Lortey pointer traceback lines " .. debug.traceback())
+function speedko:readSettingsFile()
+    self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/speedko.lua")
+end
+function speedko:loadSettings()
+    if not self.settings then
+        self:readSettingsFile()
+    end
 
+    self.pointer_type = self.settings:readSetting("pointer_type")
+
+    self.pointer_word_sec = tonumber(self.settings:readSetting("pointer_word_sec"))
+end
+
+function speedko:onReaderReady()
+    self.view:registerViewModule("speedko_indicator", self)
+    self:loadSettings()
     self:pointer() -- auto start pointer on doccument opened if it is enabled
+end
+function speedko:showSettingsDialog()
+    self.settings_dialog = MultiInputDialog:new({
+        title = _("Perception expander settings"),
+        fields = {
+            {
+                text = "",
+                input_type = "number",
+                hint = T(_("Pointer speed in pwm. Current value: %1"), tonumber(60.0 / self.pointer_word_sec)),
+            },
+            {
+                text = "",
+                input_type = "string",
+                hint = T(_("Type of pointer. Current value: " .. self.pointer_type)),
+            },
+        },
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        self.settings_dialog:onClose()
+                        UIManager:close(self.settings_dialog)
+                    end,
+                },
+                {
+                    text = _("Apply"),
+                    callback = function()
+                        self:saveSettings(self.settings_dialog:getFields())
+                        self.settings_dialog:onClose()
+                        UIManager:close(self.settings_dialog)
+                    end,
+                },
+            },
+        },
+    })
+    UIManager:show(self.settings_dialog)
+    self.settings_dialog:onShowKeyboard()
+end
+function speedko:saveSettings(fields)
+    if fields then
+        if fields[1] ~= "" and tonumber(fields[1]) > 0 then
+            self.pointer_word_sec = 60.0 / tonumber(fields[1])
+        end
+        self.pointer_type = fields[2] ~= "" and fields[2] or self.pointer_type
+    end
+
+    self.settings:saveSetting("pointer_type", self.pointer_type)
+    self.settings:saveSetting("pointer_word_sec", self.pointer_word_sec)
+    self.settings:flush()
 end
 
 function dump(var, depth)
@@ -98,7 +172,6 @@ function speedko:mapWholePage(debug)
                 table.insert(result, dump(subtable.text)) -- Add to result list
             end
         end
-        logger.dbg("Lortey Text On Page " .. table.concat(result, "|"))
     end
 
     return text
@@ -120,6 +193,7 @@ function speedko:drawHighlight(rects, type, color)
             if rect.x and rect.y and rect.w and rect.h then
                 self.ui.view:drawHighlightRect(Screen.bb, 0, 0, rect, type, color)
             end
+            rect.h = rect.h + 1 -- We need to refresh one pixel below so that underscores are rendered properly
             UIManager:setDirty(nil, "ui", rect, nil)
         end
     end
@@ -137,14 +211,26 @@ function speedko:addToMainMenu(menu_items)
     menu_items.speedko_menu = {
         text = _("Speed Reading Settings"),
         sorting_hint = "setting",
+        sub_item_table = {
+            {
+                text = _("Start Pointer"),
+                callback = function()
+                    --local words = self:mapWholePage(true)
+                    --UIManager:show(InfoMessage:new({
+                    --    text = _("Speed reading settings menu"), -- Fixed: Added proper text
+                    --}))
+                    self.pointer_enabled = true
 
-        callback = function()
-            --local words = self:mapWholePage(true)
-            UIManager:show(InfoMessage:new({
-                text = _("Speed reading settings menu"), -- Fixed: Added proper text
-            }))
-            self.pointer_enabled = true
-            self:pointer()
+                    self:loadSettings()
+                    self:pointer()
+                end,
+            },
+            {
+                text = _("Pointer settings"),
+                callback = function()
+                    self:showSettingsDialog()
+                end,
+            },
             -- UIManager:show(WidgetContainer:new({
             --     dimen = Geom:new({ w = 32, h = 32 }),
             --     icon,
@@ -160,7 +246,7 @@ function speedko:addToMainMenu(menu_items)
             --        end
             --    end
             --end)
-        end,
+        },
     }
 end
 
@@ -240,24 +326,24 @@ function speedko:createUI()
         })
     end
 end
-
+function speedko:onPageUpdate(pageno)
+    self:loadSettings()
+    self:pointer()
+end
 function speedko:pointer()
-    logger.dbg(self.pointer_index)
     local enter_time = time.now()
     if self.pointer_enabled and self.ui.document ~= nil then
         if self.ui:getCurrentPage() ~= self.current_page then
             self.current_page = self.ui:getCurrentPage()
-            self.pointer_mapped_page = self:mapWholePage()
+            self.pointer_mapped_page = self:mapWholePage(false)
             self.pointer_index = 0
         end
         local a = self.pointer_index -- copy to avoid value change before nexttick is invoked
 
-        if #self.pointer_mapped_page > self.pointer_index then
+        if #self.pointer_mapped_page >= self.pointer_index then
             UIManager:nextTick(function()
-                if self.pointer_mapped_page[a] ~= nil then
-                    if #self.pointer_mapped_page[a].box > 0 then
-                        self:drawHighlight(self.pointer_mapped_page[a].box, self.pointer_type)
-                    end
+                if self.pointer_mapped_page[a] ~= nil and #self.pointer_mapped_page[a].box > 0 then
+                    self:drawHighlight(self.pointer_mapped_page[a].box, self.pointer_type)
                 end
 
                 --refresh the previous word's highlight
@@ -265,18 +351,27 @@ function speedko:pointer()
 
             --advance pointer
             self.pointer_index = self.pointer_index + 1
+
+            local time_schedule_in = self.pointer_word_sec - time.since(enter_time) -- take time of execution into account
+            logger.dbg(
+                "Lortey execution time "
+                    .. time.now()
+                    .. " "
+                    .. time.since(enter_time)
+                    .. " next in "
+                    .. time_schedule_in
+            )
+            if time_schedule_in < 0 then -- prevent negative time
+                UIManager:scheduleIn(self.pointer_word_sec, function() --not zero to prevent crash on kindle
+                    self:pointer()
+                end)
+            else
+                UIManager:scheduleIn(time_schedule_in, function()
+                    self:pointer()
+                end)
+            end
         end
-        local time_schedule_in = self.pointer_word_sec - time.since(enter_time) -- take time of execution into account
-        logger.dbg(
-            "Lortey execution time " .. time.now() .. " " .. time.since(enter_time) .. " next in " .. time_schedule_in
-        )
-        if time_schedule_in < 0 then -- prevent negative time
-            self:pointer()
-        else
-            UIManager:scheduleIn(time_schedule_in, function()
-                self:pointer()
-            end)
-        end
+
         --for some reason refreshing does not work
         --if self.pointer_index > 0 and self.pointer_mapped_page[a] ~= nil then
         --    if #self.pointer_mapped_page[a].box > 0 then
