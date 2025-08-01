@@ -1,6 +1,8 @@
 # SpeedKO
 KOReader plugin for speed reading
-[![Demo Video](./demo.mp4)](https://user-images.githubusercontent.com/.../demo.mp4)
+
+[![Demo Video](./demonstration.mp4)](https://user-images.githubusercontent.com/.../demonstration.mp4)
+
 Current Progress
 Trying to make the pointer work on pdf. 
 
