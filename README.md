@@ -4,7 +4,7 @@ KOReader plugin for speed reading
 [![Demo Video](./demonstration.mp4)]((https://github.com/LORTEY/SpeedKO/blob/main/demonstration.mp4))
 
 Current Progress
-Trying to make the pointer work on pdf. Got an idea. I have one problem. getTextFromPage does not work with reflow well. I got another idea. Will push the changes as soon I am sure they are working as intended.
+Trying to make the pointer work on pdf. Got an idea. I have one problem. getTextFromPage does not work with reflow well. I got another idea. Will push the changes as soon I am sure they are working as intended. Now the idea does not work.
 
 To anyone crazy enough to install it now
 copy the speedko.koplugin directory to koreader/plugins/directory
