@@ -157,15 +157,36 @@ function split(inputstr, sep)
     end
     return t
 end
-
+function findCharPositions(str, char)
+    local positions = {}
+    for i = 1, #str do
+        if str:sub(i, i) == char then
+            table.insert(positions, i)
+        end
+    end
+    return positions
+end
 function speedko:mapWholePage(debug)
+    self.pageno = self.view.state.page
     debug = debug or false
     local pos0 = { x = 0, y = 0, page = self.pageno }
     local word = self.ui.view.document:getWordFromPosition(pos0)
-    logger.info("Lortey word " .. dump(word))
 
     if not word or not word.pos0 then
-        return nil
+        local res = self.ui.view.document:getTextFromPositions(
+            pos0,
+            { x = Screen:getWidth(), y = Screen:getHeight(), page = self.pageno }
+        )
+        local text = self:fallbackPageMap(res)
+        --logger.info("Lortey text " .. dump(ret))
+        local result = {}
+        for _, subtable in ipairs(text) do
+            if subtable.text then -- Check if "a" exists
+                table.insert(result, dump(subtable.text)) -- Add to result list
+            end
+        end
+        logger.info("Lortey text concat " .. table.concat(result, " "))
+        return text
     end
     local x_pointer = word.pos0
 
@@ -175,7 +196,7 @@ function speedko:mapWholePage(debug)
         table.insert(text, current)
 
         x_pointer = self.ui.view.document:getNextVisibleWordStart(current.xPos.pos1)
-        if x_pointer == nil or not self.ui.document:isXPointerInCurrentPage(x_pointer) then
+        if x_pointer == nil or not self.ui.view.document:isXPointerInCurrentPage(x_pointer) then
             break
         end
         if not self.ui.document:isXPointerInCurrentPage(x_pointer) then
@@ -193,9 +214,175 @@ function speedko:mapWholePage(debug)
         end
     end
 
+    logger.dbg(dump(text))
     return text
 end
 
+function hasChar(str, char)
+    return string.find(str, char, 1, true) ~= nil
+end
+local function concatTables(t1, t2)
+    local result = {}
+    for _, v in ipairs(t1) do
+        table.insert(result, v)
+    end
+    for _, v in ipairs(t2) do
+        table.insert(result, v)
+    end
+    return result
+end
+function charactersInStr(str, char)
+    local count = 0
+    for i in str:gmatch(char) do
+        count = count + 1
+    end
+    return count
+end
+function speedko:getWordsFromLineRecursively(line)
+    logger.dbg("Lortey recurs1 " .. dump(line))
+    if not hasChar(line.text, " ") then
+        return { line }
+    end
+    logger.dbg("Finished")
+    local y = line.sboxes[1].y
+
+    local w = line.sboxes[1].w
+    local x = line.sboxes[1].x
+    local page = line.pos0.page
+    local split_pos = { page = page, x = x + w / 2.0, y = y }
+
+    local part1 = self.ui.document:getTextFromPositions(line.pos0, split_pos)
+    local part2 = self.ui.document:getTextFromPositions(split_pos, line.pos1)
+    logger.dbg("Lortey recurs2 " .. dump(part1) .. " " .. dump(part2))
+    if part1.sboxes[1].x + part1.sboxes[1].w <= part2.sboxes[1].x then
+        local t1 = self:getWordsFromLineRecursively(part1)
+        local t2 = self:getWordsFromLineRecursively(part2)
+        return concatTables(t1, t2)
+    else
+        logger.dbg("Lortey overlap")
+
+        local p1_words = charactersInStr(part1.text, " ")
+        local p2_words = charactersInStr(part2.text, " ")
+        if p1_words < p2_words then
+            split_pos =
+                { page = page, x = x + w / 2.0 + (part1.sboxes[1].x + part1.sboxes[1].w - part2.sboxes[1].x), y = y }
+            part2 = self.ui.document:getTextFromPositions(split_pos, line.pos1)
+        else
+            split_pos =
+                { page = page, x = x + w / 2.0 - (part1.sboxes[1].x + part1.sboxes[1].w - part2.sboxes[1].x), y = y }
+            part1 = self.ui.document:getTextFromPositions(line.pos0, split_pos)
+        end
+        local t1 = self:getWordsFromLineRecursively(part1)
+        local t2 = self:getWordsFromLineRecursively(part2)
+        return concatTables(t1, t2)
+    end
+end
+--Gets X Pointer and rectangle(s) of words from provided X Pointer use debug flag to log verbose responses
+function speedko:getXPosAndPosition(lastPosX, debug)
+    debug = debug or false
+
+    -- Initialize the return table
+    local NextWord = {
+        xPos = {},
+        box = {},
+        text = {},
+    }
+
+    -- Get X Pointers error checking
+    NextWord.xPos.pos0 = lastPosX
+    NextWord.xPos.pos1 = self.ui.view.document:getNextVisibleWordEnd(NextWord.xPos.pos0)
+
+    if debug then
+        logger.dbg(
+            "Lortey Word Xpos "
+                .. NextWord.xPos.pos0
+                .. " "
+                .. self.ui.view.document:getTextFromXPointer(NextWord.xPos.pos0)
+                .. " "
+                .. NextWord.xPos.pos1
+                .. " "
+                .. self.ui.view.document:getTextFromXPointer(NextWord.xPos.pos1)
+                .. " "
+                .. self.ui.view.document:compareXPointers(NextWord.xPos.pos0, NextWord.xPos.pos1)
+        )
+    end
+
+    NextWord.box = self.ui.view.document:getScreenBoxesFromPositions(NextWord.xPos.pos0, NextWord.xPos.pos1, not debug)
+    if debug then
+        logger.dbg("Lortey Word Boxes " .. dump(NextWord.box))
+    end
+
+    NextWord.text = self.ui.view.document:getTextFromXPointers(NextWord.xPos.pos0, NextWord.xPos.pos1, debug)
+
+    if debug then
+        logger.dbg("Lortey Text Xpointers " .. NextWord.text)
+    end
+
+    return NextWord
+end
+
+function speedko:fallbackPageMap(res) --used when xpointers not present
+    local lines = {}
+    logger.dbg(dump(res))
+    for _, pos in ipairs(res.sboxes) do
+        local line = self.ui.document:getTextFromPositions(
+            { x = pos.x, y = pos.y, page = res.pos0.page },
+            { x = pos.x + pos.w, y = pos.y, page = res.pos0.page },
+            true -- do not highlight
+        )
+        table.insert(lines, line)
+    end
+    local words = {}
+
+    for _, line in ipairs(lines) do
+        --[[local line_length = #line.text * 1.0
+        local spaces = findCharPositions(line.text, " ")
+        local lastpos = 0
+        for _, space in ipairs(spaces) do
+            local word = self.ui.document:getTextFromPositions({
+                x = line.sboxes[1].x + (line.sboxes[1].w / line_length) * ((lastpos + space) / 2.0),
+                y = line.sboxes[1].y,
+                page = res.pos0.page,
+            }, {
+                x = line.sboxes[1].x + (line.sboxes[1].w / line_length) * ((lastpos + space) / 2.0),
+                y = line.sboxes[1].y,
+                page = res.pos0.page,
+            }, false)
+
+            lastpos = space
+            local NextWord = {
+                box = {},
+                text = {},
+            }
+            NextWord.box = word.sboxes
+            NextWord.text = word.text
+            --logger.dbg("Lortey wordsss " .. dump(word))
+            table.insert(words, NextWord)
+        end
+        local word = self.ui.document:getTextFromPositions({
+            x = line.sboxes[1].x + (line.sboxes[1].w / line_length) * ((lastpos + line_length) / 2.0),
+            y = line.sboxes[1].y,
+            page = res.pos0.page,
+        }, {
+            x = line.sboxes[1].x + (line.sboxes[1].w / line_length) * ((lastpos + line_length) / 2.0),
+            y = line.sboxes[1].y,
+            page = res.pos0.page,
+        }, false)
+        local NextWord = {
+            box = { {} },
+            text = {},
+        }
+        NextWord.box[1] = word.sbox
+        NextWord.text = word.word]]
+        --
+
+        local word = self:getWordsFromLineRecursively(line)
+        logger.dbg("Lortey wordsss " .. dump(word))
+
+        table.insert(words, word)
+    end
+    return words
+end
 -- Invoke Like this
 --UIManager:nextTick(function()
 --  if #value.box == 1 then
@@ -267,50 +454,6 @@ function speedko:addToMainMenu(menu_items)
             --end)
         },
     }
-end
-
---Gets X Pointer and rectangle(s) of words from provided X Pointer use debug flag to log verbose responses
-function speedko:getXPosAndPosition(lastPosX, debug)
-    debug = debug or false
-
-    -- Initialize the return table
-    local NextWord = {
-        xPos = {},
-        box = {},
-        text = {},
-    }
-
-    -- Get X Pointers error checking
-    NextWord.xPos.pos0 = lastPosX
-    NextWord.xPos.pos1 = self.ui.view.document:getNextVisibleWordEnd(NextWord.xPos.pos0)
-
-    if debug then
-        logger.dbg(
-            "Lortey Word Xpos "
-                .. NextWord.xPos.pos0
-                .. " "
-                .. self.ui.view.document:getTextFromXPointer(NextWord.xPos.pos0)
-                .. " "
-                .. NextWord.xPos.pos1
-                .. " "
-                .. self.ui.view.document:getTextFromXPointer(NextWord.xPos.pos1)
-                .. " "
-                .. self.ui.view.document:compareXPointers(NextWord.xPos.pos0, NextWord.xPos.pos1)
-        )
-    end
-
-    NextWord.box = self.ui.view.document:getScreenBoxesFromPositions(NextWord.xPos.pos0, NextWord.xPos.pos1, not debug)
-    if debug then
-        logger.dbg("Lortey Word Boxes " .. dump(NextWord.box))
-    end
-
-    NextWord.text = self.ui.view.document:getTextFromXPointers(NextWord.xPos.pos0, NextWord.xPos.pos1, debug)
-
-    if debug then
-        logger.dbg("Lortey Text Xpointers " .. NextWord.text)
-    end
-
-    return NextWord
 end
 
 function speedko:paintTo(bb, x, y)
