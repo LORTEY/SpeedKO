@@ -299,126 +299,194 @@ function appendAll(target, source)
     end
     return target
 end
-function speedko:recursiveLineMap(line)
-    local change_by = 0.1
 
-    local first_index = string.find(line.text, " ", 1, true)
-    if first_index == nil then
-        return {}
-    end
-    local first_word = trim(string.sub(line.text, 1, first_index - 1))
-    local y = line.sboxes[1].y --+ line.sboxes[1].h / 2
-    local current_x = line.sboxes[1].x
-    local current_w = line.sboxes[1].w * ((#first_word * 1.0) / #line.text)
-    local current_text = self.ui.document:getTextFromPositions(
-        { x = current_x, y = y, page = line.pos0.page },
-        { x = current_x + current_w, y = y, page = line.pos0.page },
-        false
-    )
-    while current_text.text == nil or trim(current_text.text) ~= first_word do
-        logger.dbg(
-            "Lortey x "
-                .. current_x
-                .. " w "
-                .. current_w
-                .. " text "
-                .. first_word
-                .. " current "
-                .. dump(current_text)
-                .. " line "
-                .. line.text
-        )
-        local start_idx, end_idx = string.find(current_text.text, first_word)
-        if start_idx ~= nil and end_idx ~= nil then
-            if start_idx > 1 then
-                current_x = round(current_x + 1)
-            end
-            if end_idx < #current_text.text then
-                current_w = round(current_w - 1)
-                if current_w < 1 then -- error fallback to return the line something went terribly wrong
-                    return { line }
-                end
-            end
-        else
-            current_x = round(current_x - 1)
-            if current_x < 1 then
-                current_x = 0
-            end
-            if current_w < 1 then
-                current_w = 10
-            else
-                current_w = round(current_w + 1)
-            end
+function find_first_nil_value(t)
+    for key, value in pairs(t) do
+        if value == 0 then
+            return key
         end
     end
-    logger.dbg("Lortey passed")
-    logger.dbg(
-        "Lortey x "
-            .. current_x
-            .. " w "
-            .. current_w
-            .. " text "
-            .. first_word
-            .. " current "
-            .. dump(current_text)
-            .. " line "
-            .. line.text
-    )
-
-    local target = { current_text }
-    local remaining_text = trim(string.sub(line.text, first_index + 1))
-    current_x = current_text.sboxes[1].x + current_text.sboxes[1].w + 1
-    current_w = line.sboxes[1].w - current_text.sboxes[1].w
-    current_text = self.ui.document:getTextFromPositions(
-        { x = current_x, y = y, page = line.pos0.page },
-        { x = current_x + current_w, y = y, page = line.pos0.page },
-        false
-    )
-
-    while current_text.text == nil or trim(current_text.text) ~= remaining_text do
-        sleep(0.5)
-
-        local start_idx, end_idx = string.find(current_text.text, remaining_text)
-        logger.dbg(
-            "Lortey x "
-                .. current_x
-                .. " w "
-                .. current_w
-                .. " text "
-                .. remaining_text
-                .. " current "
-                .. dump(current_text)
-                .. " line "
-                .. line.text
-                .. tostring(start_idx)
-                .. " "
-                .. tostring(end_idx)
-        )
-
-        if start_idx ~= nil and end_idx ~= nil then
-            if start_idx > 1 then
-                current_x = round(current_x + (current_w * change_by))
-            end
-            if end_idx < #current_text.text then
-                current_w = round(current_w - (current_w * change_by))
-                if current_w < 1 then -- error fallback to return the line something went terribly wrong
-                    return { line }
-                end
-            end
-        else
-            current_x = round(current_x - (current_w * change_by))
-            if current_x < 1 then
-                current_x = 0
-            end
-            if current_w < 1 then
-                current_w = 10
-            else
-                current_w = round(current_w + (current_w * change_by))
-            end
-        end
-    end
-    return appendAll(target, self:recursiveLineMap(current_text))
+    return nil -- No nil values found
 end
+function find_closest_left_non_nil_value(t, index)
+    local x = tonumber(index)
+    x = x - 1
+    while x > 0 do
+        if t[tostring(x)] ~= 0 then
+            return tostring(x)
+        end
+        x = x - 1
+    end
+    return nil -- No non nil values found
+end
+function find_closest_right_non_nil_value(t, index, tb_size)
+    local x = tonumber(index)
+    x = x + 1
+    while x < tb_size do
+        if t[tostring(x)] ~= 0 then
+            return tostring(x)
+        end
+        x = x + 1
+    end
+    return nil -- No non nil values found
+end
+
+function estimate_word_x_position(t, all_words, index_l, index_r, avg_character_width, avg_space_width, x_fallback)
+    x_fallback = x_fallback or nil
+    local stop_at = tonumber(index_r)
+    local x = 0
+    local i = 0
+    if index_l ~= nil then
+        i = tonumber(index_l)
+        x = t[index_l].sbox.x
+        x = x + avg_space_width
+    else
+        x = x_fallback
+    end
+    i = i + 1
+    while i < stop_at do
+        logger.dbg("Lortey estimation " .. i)
+        x = x + (#all_words[i] * avg_character_width)
+        x = x + avg_space_width
+        i = i + 1
+    end
+
+    logger.dbg("Lortey estimation_finished")
+    return x
+end
+function estimate_word_x_position_right_to_left(
+    t,
+    all_words,
+    index_r,
+    index_l,
+    avg_character_width,
+    avg_space_width,
+    x_fallback
+)
+    x_fallback = x_fallback or nil
+    local stop_at = tonumber(index_l)
+    local x = 0
+    local i = 0
+    if index_r ~= nil then
+        i = tonumber(index_r)
+        x = t[index_r].sbox.x
+        x = x - avg_space_width
+    else
+        x = x_fallback
+    end
+    i = i - 1
+    while i > stop_at do
+        x = x - (#all_words[i] * avg_character_width)
+        x = x - avg_space_width
+        i = i - 1
+    end
+    return x
+end
+function find_closest_matching_word(all_words, words_table, i, word, tbl_length)
+    local x = 0
+    local trimmed_word = word:gsub("[%,.!%s]", "")
+    while tonumber(i) - x > 0 or tonumber(i) + x <= tbl_length do
+        if tonumber(i) - x > 0 then
+            if all_words[tonumber(i) - x] ~= 0 and all_words[tonumber(i) - x]:gsub("[%,.!%s]", "") == trimmed_word then
+                return tostring(tonumber(i) - x)
+            end
+        end
+        if tonumber(i) + x <= tbl_length then
+            if all_words[tonumber(i) + x] ~= 0 and all_words[tonumber(i) + x]:gsub("[%,.!%s]", "") == trimmed_word then
+                return tostring(tonumber(i) + x)
+            end
+        end
+        x = x + 1
+    end
+    return nil
+end
+function speedko:recursiveLineMap(line)
+    local all_words = split(line.text, " ")
+    local words_table = {}
+    local table_len = 0
+    for _ in ipairs(all_words) do
+        words_table[tostring(table_len + 1)] = 0
+        table_len = table_len + 1
+    end
+    local y = round(line.sboxes[1].y + line.sboxes[1].h / 2)
+    local currently_mapped = 1
+    logger.dbg("Lortey new " .. dump(words_table) .. tostring(#words_table))
+    local spaces_counted, characters_counted = 0
+    local avg_character_width, avg_space_width = line.sboxes[1].w / #line.text, line.sboxes[1].w / #line.text
+    while currently_mapped < table_len do
+        local i = find_first_nil_value(words_table)
+        local x0, x1 = nil, nil
+        local closest_non_nil_left_index = find_closest_left_non_nil_value(words_table, i)
+        logger.dbg("Lortey closest left " .. tostring(closest_non_nil_left_index))
+
+        if closest_non_nil_left_index ~= nil then
+            x0 = estimate_word_x_position(
+                words_table,
+                all_words,
+                closest_non_nil_left_index,
+                i,
+                avg_character_width,
+                avg_space_width
+            )
+        else
+            x0 = estimate_word_x_position(
+                words_table,
+                all_words,
+                closest_non_nil_left_index,
+                i,
+                avg_character_width,
+                avg_space_width,
+                line.sboxes[1].x
+            )
+        end
+        local closest_non_nil_right_index = find_closest_right_non_nil_value(words_table, i, table_len)
+
+        logger.dbg("Lortey closest right " .. tostring(closest_non_nil_right_index))
+        if closest_non_nil_right_index ~= nil then
+            x1 = estimate_word_x_position_right_to_left(
+                words_table,
+                all_words,
+                closest_non_nil_right_index,
+                i,
+                avg_character_width,
+                avg_space_width
+            )
+        else
+            x1 = estimate_word_x_position_right_to_left(
+                words_table,
+                all_words,
+                closest_non_nil_right_index,
+                i,
+                avg_character_width,
+                avg_space_width,
+                line.sboxes[1].x + line.sboxes[1].w
+            )
+        end
+        local x_mid = round((x0 + x1) / 2)
+        local current_word = self.ui.view.document:getWordFromPosition({ x = x_mid, y = y, page = line.pos0.page })
+        local closest_index = find_closest_matching_word(all_words, words_table, i, current_word.word, table_len)
+        if closest_index ~= nil then
+            words_table[closest_index] = current_word
+            currently_mapped = currently_mapped + 1
+        end
+        logger.dbg(
+            "Lortey new "
+                .. i
+                .. " mid "
+                .. x_mid
+                .. " y "
+                .. y
+                .. " "
+                .. dump(current_word)
+                .. " "
+                .. dump(words_table)
+                .. "\n"
+                .. dump(line)
+        )
+    end
+    return words_table
+end
+
 function trim(s)
     local from = s:match("^%s*()")
     return from > #s and "" or s:match(".*%S", from)
