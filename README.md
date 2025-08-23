@@ -10,7 +10,7 @@ Trying to make the pointer work on pdf. Oh wow my first like on a repository. I 
 Progress:
 
 * Today the sixth iteration of the idea how to make it work failed miserably i have last one approach to try.
-* The idea kinda works but it needs a bit of polishing.
+* The idea kinda works but it needs a bit of polishing..
 
 
 
