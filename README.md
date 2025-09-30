@@ -13,6 +13,6 @@ Progress:
 * The idea kinda works but it needs a bit of polishing..
 
 Update:
-Currently learning C. After i learn it I will be able to understand the backend better especially the CreDocument implementation that koreader uses. Possibly then I will be able to fix this mistake with xPointerles file types like pdf. Currently pointer function works on Epub, txt, html, markdown and probably other dile types.
+Currently learning C. After i learn it I will be able to understand the backend better especially the CreDocument implementation that koreader uses. Possibly then I will be able to fix this mistake with xPointerles file types like pdf. Currently pointer function works on Epub, txt, html, markdown and probably other dile types. Sorry I have been feeling burned out for some time now. Will try to do something with this project someday.
 
 
