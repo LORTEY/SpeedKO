@@ -15,4 +15,6 @@ Progress:
 Update:
 Currently learning C. After i learn it I will be able to understand the backend better especially the CreDocument implementation that koreader uses. Possibly then I will be able to fix this mistake with xPointerles file types like pdf. Currently pointer function works on Epub, txt, html, markdown and probably other dile types. Sorry I have been feeling burned out for some time now. Will try to do something with this project someday.
 
+Sorry to all (both) of the followers but recently I am really short on time and am not really able to find time to do any of my programming projects. Sorry. But to anyone who wants to use this plugin you can from what i remember. It (pointer feature) should work on any xpointer document but it may freeze on files like pdf from what I remember.
+
 
