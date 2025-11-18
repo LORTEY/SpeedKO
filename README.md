@@ -1,4 +1,6 @@
 # SpeedKO
+
+Currently Abandoned as it is useless to me. Sorry everyone.
 KOReader plugin for speed reading
 
 To anyone crazy enough to install it now
